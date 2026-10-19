@@ -1,0 +1,20 @@
+# Qdrant vector database: stores dense vectors + BM25 sparse vectors + chunk payloads.
+#   start:      docker compose up -d
+#   dashboard:  http://localhost:6333/dashboard
+#   stop:       docker compose down        (data survives in the named volume)
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.19.2
+    container_name: rag-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333" # REST API + web dashboard
+      - "6334:6334" # gRPC (faster bulk uploads)
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+    volumes:
+      # Named volume, not a folder bind mount: Qdrant warns bind mounts on Windows can lose data.
+      - qdrant_storage:/qdrant/storage
+
+volumes:
+  qdrant_storage:

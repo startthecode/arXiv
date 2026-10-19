@@ -1,0 +1,9 @@
+.venv/
+.env
+uv.toml
+__pycache__/
+.pytest_cache/
+data/raw/pdf/
+data/raw/md/
+data/processed/
+data/eval/results/

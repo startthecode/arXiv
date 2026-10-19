@@ -1,0 +1,10 @@
+{"question": "What are latent evaluation states (LESs), and what five components do they contain?", "paper_id": "2610.13617", "pages": [3, 4]}
+{"question": "How was the WildChat dataset filtered and cleaned before training the user simulators?", "paper_id": "2610.13617", "pages": [4, 5]}
+{"question": "How do latent evaluation states improve user simulator realism and alignment with human feedback compared with prompted baselines?", "paper_id": "2610.13617", "pages": [6, 7]}
+{"question": "How does user intent conditioning affect the feedback behavior and simulation realism of LES-based user simulators?", "paper_id": "2610.13617", "pages": [7, 8]}
+{"question": "How does using intrinsic rewards from LES-based simulators affect reinforcement learning performance and computational cost compared with external LLM judges?", "paper_id": "2610.13617", "pages": [9, 10]}
+{"question": "How does the proposed multi-agent LLM framework tune individual neural network components without changing the overall network architecture?", "paper_id": "2610.13663", "pages": [2, 3, 4]}
+{"question": "What are the responsibilities of the LLM Analyst, LLM Coder, and LLM Recorder, and how do they collaborate during an experiment?", "paper_id": "2610.13663", "pages": [4, 5, 6]}
+{"question": "How does the framework use an experiment log and a dynamically updated coverage map to improve hypothesis generation and avoid repeatedly exploring similar methods?", "paper_id": "2610.13663", "pages": [4, 5, 6]}
+{"question": "How does the framework tune the decoder of a spiking neural network while keeping the input encoding, trained network, and recorded neural activity fixed?", "paper_id": "2610.13663", "pages": [6, 7]}
+{"question": "Which input and output transformations can the agents modify when tuning Physics-Informed Neural Networks, and which parts of the model and training pipeline must remain fixed?", "paper_id": "2610.13663", "pages": [7, 8, 9]}

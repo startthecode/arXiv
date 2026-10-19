@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>arXiv RAG</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #677085; --line: #e1e4ea;
+    --accent: #2f6fde; --accent-soft: #e8effc; --ok: #1e9e5a; --bad: #d64545; --user: #eef1f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1a1e26; --text: #e4e8ef; --muted: #8f98aa; --line: #2b313d;
+      --accent: #6d9cf2; --accent-soft: #1f2a40; --ok: #3fbf7f; --bad: #ef6b6b; --user: #222833;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { position: sticky; top: 0; z-index: 1; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .bar { max-width: 880px; margin: 0 auto; padding: 10px 16px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  h1 { font-size: 17px; margin: 0; margin-right: auto; }
+  .chip { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
+  label.opt { font-size: 13px; color: var(--muted); display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+  main { max-width: 880px; margin: 0 auto; padding: 16px 16px 130px; }
+  .empty { color: var(--muted); text-align: center; margin-top: 18vh; }
+  .q { background: var(--user); border-radius: 12px; padding: 10px 14px; margin: 22px 0 10px; white-space: pre-wrap; }
+  .a { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .status { color: var(--muted); font-size: 13px; }
+  .answer { white-space: pre-wrap; margin: 8px 0 4px; }
+  .answer:empty { display: none; }
+  .error { color: var(--bad); margin-top: 6px; }
+  a.cite { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 0.9em; }
+  details.plan { font-size: 13px; color: var(--muted); }
+  details.plan ol { margin: 6px 0; padding-left: 20px; }
+  .sources { margin-top: 12px; display: grid; gap: 8px; }
+  .src { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; font-size: 13px; scroll-margin-top: 80px; }
+  .src:target { border-color: var(--accent); background: var(--accent-soft); }
+  .src .head { display: flex; gap: 8px; align-items: baseline; }
+  .src .n { font-weight: 700; color: var(--accent); }
+  .src .title { font-weight: 600; }
+  .src .meta { color: var(--muted); }
+  .src details summary { cursor: pointer; color: var(--muted); margin-top: 4px; }
+  .src .text { white-space: pre-wrap; margin-top: 6px; max-height: 320px; overflow: auto; }
+  footer { position: fixed; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, var(--bg) 30%); }
+  form { max-width: 880px; margin: 0 auto; padding: 18px 16px 16px; display: flex; gap: 8px; }
+  textarea { flex: 1; resize: none; height: 52px; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--line);
+             background: var(--panel); color: var(--text); font: inherit; }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button { border: 0; border-radius: 12px; padding: 0 20px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>arXiv RAG</h1>
+    <span class="chip"><span class="dot" id="qdrant-dot"></span>Qdrant</span>
+    <span class="chip"><span class="dot" id="ollama-dot"></span><span id="ollama-label">Ollama</span></span>
+    <label class="opt"><input type="checkbox" id="rewrite" checked>rewrite</label>
+    <label class="opt"><input type="checkbox" id="rerank" checked>rerank</label>
+  </div>
+</header>
+
+<main id="chat"><p class="empty" id="empty">Ask a question about the 1,050 indexed arXiv papers.</p></main>
+
+<footer>
+  <form id="form">
+    <textarea id="input" placeholder="e.g. In the MatQuery paper, how are the databases kept frozen?  (Enter to send)"></textarea>
+    <button id="send" type="submit">Ask</button>
+  </form>
+</footer>
+
+<script>
+const chat = document.getElementById("chat");
+const input = document.getElementById("input");
+const send = document.getElementById("send");
+let busy = false, counter = 0;
+
+// Never put server text into innerHTML unescaped: paper text can contain "<", "&", ...
+const esc = (t) => t.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// "[2]" in the answer -> a link that jumps to (and highlights) source card 2 of this answer
+const linkify = (text, id) => esc(text).replace(/\[(\d+)\]/g, (_, n) => `<a class="cite" href="#${id}-src-${n}">[${n}]</a>`);
+const el = (tag, cls, html) => Object.assign(document.createElement(tag), { className: cls || "", innerHTML: html || "" });
+const scrollDown = () => window.scrollTo({ top: document.body.scrollHeight });
+
+async function checkHealth() {
+  try {
+    const h = await (await fetch("/api/health")).json();
+    document.getElementById("qdrant-dot").className = "dot " + (h.qdrant ? "ok" : "bad");
+    document.getElementById("ollama-dot").className = "dot " + (h.ollama ? "ok" : "bad");
+    document.getElementById("ollama-label").textContent = "Ollama · " + h.model;
+  } catch { /* server not reachable: dots stay grey */ }
+}
+
+function ask(question) {
+  if (busy || question.trim().length < 3) return;
+  busy = true; send.disabled = true;
+  document.getElementById("empty")?.remove();
+  const id = "a" + (++counter);
+
+  chat.append(el("div", "q", esc(question)));
+  const box = el("div", "a");
+  const status = el("div", "status", "Connecting…");
+  const plan = el("details", "plan");
+  plan.hidden = true;                      // shown once the "plan" event arrives
+  const answer = el("div", "answer");
+  const sources = el("div", "sources");
+  box.append(status, plan, answer, sources);
+  chat.append(box);
+  scrollDown();
+
+  const params = new URLSearchParams({
+    q: question,
+    rewrite: document.getElementById("rewrite").checked,
+    rerank: document.getElementById("rerank").checked,
+  });
+  const stream = new EventSource("/api/ask?" + params);   // the browser's built-in SSE client
+  let text = "", finished = false, label = "Connecting…";
+  const t0 = Date.now();
+  const tick = setInterval(() => {         // progress label + seconds elapsed, so slow steps don't look frozen
+    if (label) status.textContent = `${label} ${Math.round((Date.now() - t0) / 1000)}s`;
+  }, 1000);
+  const finish = () => {
+    finished = true; clearInterval(tick); stream.close(); busy = false; send.disabled = false; input.focus();
+  };
+
+  stream.addEventListener("status", (e) => {   // "Rewriting…", "Searching…", "Loading the LLM…"
+    label = JSON.parse(e.data);
+    status.textContent = label;
+  });
+
+  stream.addEventListener("plan", (e) => {
+    plan.hidden = false;
+    const p = JSON.parse(e.data);
+    const filter = p.paper_ids.length ? "papers " + p.paper_ids.join(", ") : "none (all papers)";
+    plan.innerHTML = `<summary>Search plan · ${p.queries.length} queries · filter: ${esc(filter)}</summary>
+      <ol>${p.queries.map((q) => `<li>${esc(q)}</li>`).join("")}</ol>
+      ${p.notes.map((n) => `<div>• ${esc(n)}</div>`).join("")}`;
+  });
+
+  stream.addEventListener("sources", (e) => {
+    const list = JSON.parse(e.data);
+    label = list.length ? `Found ${list.length} sources…` : "";
+    status.textContent = label;
+    sources.innerHTML = list.map((s) => `
+      <div class="src" id="${id}-src-${s.n}">
+        <div class="head"><span class="n">[${s.n}]</span>
+          <a class="title" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a></div>
+        <div class="meta">${esc(s.section)} · pp. ${esc(s.pages)} · arXiv ${esc(s.paper_id)} · relevance ${s.score}</div>
+        <details><summary>show passage</summary><div class="text">${esc(s.text)}</div></details>
+      </div>`).join("");
+    scrollDown();
+  });
+
+  stream.addEventListener("token", (e) => {
+    label = "";
+    status.textContent = "";
+    text += JSON.parse(e.data);
+    answer.textContent = text;             // plain text while streaming (fast, safe)
+    scrollDown();
+  });
+
+  stream.addEventListener("done", () => {
+    answer.innerHTML = linkify(text, id);  // at the end: turn [n] into links to the source cards
+    finish();
+  });
+
+  stream.addEventListener("fail", (e) => {  // our own error event (named "fail": "error" is reserved by EventSource)
+    label = "";
+    status.textContent = "";
+    box.append(el("div", "error", esc(JSON.parse(e.data))));
+    finish();
+  });
+
+  stream.onerror = () => {                   // connection-level problem (server stopped, network, ...)
+    if (finished) return;
+    box.append(el("div", "error", "Connection to the server lost."));
+    finish();
+  };
+}
+
+document.getElementById("form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const q = input.value;
+  input.value = "";
+  ask(q);
+});
+input.addEventListener("keydown", (e) => {   // Enter sends, Shift+Enter makes a new line
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); document.getElementById("form").requestSubmit(); }
+});
+checkHealth();
+input.focus();
+</script>
+</body>
+</html>
